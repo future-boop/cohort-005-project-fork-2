@@ -65,6 +65,24 @@ describe("the Discussion thread", () => {
     expect(thread[1].replies).toEqual([]);
   });
 
+  it("leaves out a reply to a reply, since the thread is one level deep", () => {
+    const question = post(s.user.id, "Question", {
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const answer = post(s.instructor.id, "Answer", {
+      createdAt: "2026-01-02T00:00:00Z",
+      parentId: question.id,
+    });
+    post(s.user.id, "Reply to the answer", {
+      createdAt: "2026-01-03T00:00:00Z",
+      parentId: answer.id,
+    });
+
+    const thread = s.page.getLessonThread(lessonId);
+    expect(thread).toHaveLength(1);
+    expect(thread[0].replies.map((r) => r.id)).toEqual([answer.id]);
+  });
+
   it("flags a Platform Admin author", () => {
     const admin = s.db
       .insert(schema.users)

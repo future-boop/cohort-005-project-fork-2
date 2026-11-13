@@ -130,6 +130,35 @@ describe("submitting a quiz", () => {
     expect(result?.questionResults[0].correctOptionId).toBe(q.choice.right.id);
   });
 
+  it("finds the right option wherever it sits in the list", () => {
+    const question = s.db
+      .insert(schema.quizQuestions)
+      .values({
+        quizId: q.quiz.id,
+        questionText: "Right first",
+        questionType: schema.QuestionType.MultipleChoice,
+        position: 3,
+      })
+      .returning()
+      .get();
+    const [right, wrong] = [true, false].map((isCorrect) =>
+      s.db
+        .insert(schema.quizOptions)
+        .values({ questionId: question.id, optionText: "x", isCorrect })
+        .returning()
+        .get()
+    );
+    const result = s.page.computeResult(s.user.id, q.quiz.id, {
+      [question.id]: wrong.id,
+    });
+    expect(result?.questionResults[2]).toEqual({
+      questionId: question.id,
+      correct: false,
+      selectedOptionId: wrong.id,
+      correctOptionId: right.id,
+    });
+  });
+
   it("returns null for an unknown quiz and records nothing", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(s.page.computeResult(s.user.id, q.quiz.id + 1, {})).toBeNull();

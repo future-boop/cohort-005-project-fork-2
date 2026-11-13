@@ -10,7 +10,6 @@ import {
 import type { Db } from "./db";
 
 function getLessonsInModules(db: Db, moduleIds: number[]) {
-  if (moduleIds.length === 0) return [];
   return db
     .select()
     .from(lessons)

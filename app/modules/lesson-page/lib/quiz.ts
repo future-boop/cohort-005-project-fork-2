@@ -45,7 +45,6 @@ export function getQuizWithQuestions(db: Db, quizId: number) {
 }
 
 function getOptionsForQuestions(db: Db, questionIds: number[]) {
-  if (questionIds.length === 0) return [];
   return db
     .select()
     .from(quizOptions)
@@ -86,13 +85,17 @@ export type QuestionResult = {
 };
 
 function getCorrectOptionByQuestion(db: Db, questionIds: number[]) {
-  const correctOptionByQuestion = new Map<number, number>();
-  for (const option of getOptionsForQuestions(db, questionIds)) {
-    if (option.isCorrect && !correctOptionByQuestion.has(option.questionId)) {
-      correctOptionByQuestion.set(option.questionId, option.id);
-    }
-  }
-  return correctOptionByQuestion;
+  const correctOptions = db
+    .select({ id: quizOptions.id, questionId: quizOptions.questionId })
+    .from(quizOptions)
+    .where(
+      and(
+        inArray(quizOptions.questionId, questionIds),
+        eq(quizOptions.isCorrect, true)
+      )
+    )
+    .all();
+  return new Map(correctOptions.map((o) => [o.questionId, o.id]));
 }
 
 function scoreQuestion(
