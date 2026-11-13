@@ -1,7 +1,7 @@
 import { MAX_NOTE_LENGTH } from "~/lib/notes";
 
 export type NoteDraft = {
-  /** Characters typed so far, for the counter. */
+  /** Characters that will be saved, for the counter. */
   length: number;
   max: number;
   tooLong: boolean;
@@ -20,7 +20,7 @@ export function readDraft(draft: string, savedBody: string | null): NoteDraft {
   const tooLong = trimmed.length > MAX_NOTE_LENGTH;
   const unsaved = trimmed !== (savedBody ?? "");
   return {
-    length: draft.length,
+    length: trimmed.length,
     max: MAX_NOTE_LENGTH,
     tooLong,
     empty,

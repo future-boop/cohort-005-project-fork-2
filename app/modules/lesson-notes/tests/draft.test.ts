@@ -14,10 +14,10 @@ describe("describeNoteDraft", () => {
     });
   });
 
-  it("treats whitespace as empty, but counts it", () => {
+  it("treats whitespace as empty, and does not count it", () => {
     const draft = describeNoteDraft("   \n ", null);
     expect(draft.empty).toBe(true);
-    expect(draft.length).toBe(5);
+    expect(draft.length).toBe(0);
     expect(draft.canSave).toBe(false);
   });
 
@@ -69,6 +69,7 @@ describe("describeNoteDraft", () => {
 
   it("measures the limit after trimming, as the server does", () => {
     const draft = describeNoteDraft(` ${"a".repeat(MAX_NOTE_LENGTH)} `, null);
+    expect(draft.length).toBe(MAX_NOTE_LENGTH);
     expect(draft.tooLong).toBe(false);
     expect(draft.canSave).toBe(true);
   });
