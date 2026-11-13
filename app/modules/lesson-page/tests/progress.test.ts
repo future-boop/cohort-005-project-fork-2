@@ -3,6 +3,8 @@ import * as schema from "~/db/schema";
 import { LessonProgressStatus } from "~/db/schema";
 import { setUp, type Setup } from "./fixtures";
 
+const NOW = new Date("2026-03-01T12:00:00.000Z");
+
 let s: Setup;
 beforeEach(() => {
   s = setUp();
@@ -37,24 +39,24 @@ describe("lesson progress", () => {
     expect(started.status).toBe(LessonProgressStatus.InProgress);
     expect(started.completedAt).toBeNull();
 
-    const done = s.page.markLessonComplete(s.user.id, lessonId);
+    const done = s.page.markLessonComplete(s.user.id, lessonId, NOW);
     expect(done.id).toBe(started.id);
     expect(done.status).toBe(LessonProgressStatus.Completed);
-    expect(done.completedAt).not.toBeNull();
+    expect(done.completedAt).toBe(NOW.toISOString());
     expect(s.page.getLessonProgress(s.user.id, lessonId)?.status).toBe(
       LessonProgressStatus.Completed
     );
   });
 
   it("completes a lesson the Student never started", () => {
-    const done = s.page.markLessonComplete(s.user.id, s.lessons[1].id);
+    const done = s.page.markLessonComplete(s.user.id, s.lessons[1].id, NOW);
     expect(done.status).toBe(LessonProgressStatus.Completed);
-    expect(done.completedAt).not.toBeNull();
+    expect(done.completedAt).toBe(NOW.toISOString());
   });
 
   it("does not move a completed lesson back to in progress", () => {
     const lessonId = s.lessons[0].id;
-    s.page.markLessonComplete(s.user.id, lessonId);
+    s.page.markLessonComplete(s.user.id, lessonId, NOW);
     expect(s.page.markLessonInProgress(s.user.id, lessonId).status).toBe(
       LessonProgressStatus.Completed
     );
@@ -92,8 +94,8 @@ describe("lesson progress", () => {
       .values({ moduleId: otherModule.id, title: "Other lesson", position: 1 })
       .returning()
       .get();
-    s.page.markLessonComplete(s.user.id, otherLesson.id);
-    s.page.markLessonComplete(s.user.id, s.lessons[1].id);
+    s.page.markLessonComplete(s.user.id, otherLesson.id, NOW);
+    s.page.markLessonComplete(s.user.id, s.lessons[1].id, NOW);
 
     expect(
       s.page
@@ -103,9 +105,9 @@ describe("lesson progress", () => {
   });
 
   it("lists progress for this Student in this course only", () => {
-    s.page.markLessonComplete(s.user.id, s.lessons[0].id);
+    s.page.markLessonComplete(s.user.id, s.lessons[0].id, NOW);
     s.page.markLessonInProgress(s.user.id, s.lessons[2].id);
-    s.page.markLessonComplete(s.instructor.id, s.lessons[1].id);
+    s.page.markLessonComplete(s.instructor.id, s.lessons[1].id, NOW);
 
     const rows = s.page.getLessonProgressForCourse(s.user.id, s.course.id);
     expect(rows.map((r) => r.lessonId).sort()).toEqual(
@@ -127,7 +129,7 @@ describe("lesson progress", () => {
       })
       .returning()
       .get();
-    s.page.markLessonComplete(s.user.id, s.lessons[0].id);
+    s.page.markLessonComplete(s.user.id, s.lessons[0].id, NOW);
     expect(s.page.getLessonProgressForCourse(s.user.id, empty.id)).toEqual([]);
 
     s.db
