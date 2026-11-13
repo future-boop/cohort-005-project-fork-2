@@ -17,16 +17,20 @@ export function getQuizByLessonId(db: Db, lessonId: number) {
   return db.select().from(quizzes).where(eq(quizzes.lessonId, lessonId)).get();
 }
 
-export function getQuizWithQuestions(db: Db, quizId: number) {
-  const quiz = db.select().from(quizzes).where(eq(quizzes.id, quizId)).get();
-  if (!quiz) return null;
-
-  const questions = db
+function getQuestions(db: Db, quizId: number) {
+  return db
     .select()
     .from(quizQuestions)
     .where(eq(quizQuestions.quizId, quizId))
     .orderBy(quizQuestions.position)
     .all();
+}
+
+export function getQuizWithQuestions(db: Db, quizId: number) {
+  const quiz = db.select().from(quizzes).where(eq(quizzes.id, quizId)).get();
+  if (!quiz) return null;
+
+  const questions = getQuestions(db, quizId);
 
   const options = getOptionsForQuestions(
     db,
@@ -81,6 +85,63 @@ export type QuestionResult = {
   correctOptionId: number | null;
 };
 
+function getCorrectOptionByQuestion(db: Db, questionIds: number[]) {
+  const correctOptionByQuestion = new Map<number, number>();
+  for (const option of getOptionsForQuestions(db, questionIds)) {
+    if (option.isCorrect && !correctOptionByQuestion.has(option.questionId)) {
+      correctOptionByQuestion.set(option.questionId, option.id);
+    }
+  }
+  return correctOptionByQuestion;
+}
+
+function scoreQuestion(
+  question: { id: number; questionType: QuestionType },
+  selected: number | undefined,
+  correctOptionByQuestion: Map<number, number>
+): QuestionResult {
+  if (!selected) {
+    return {
+      questionId: question.id,
+      correct: false,
+      selectedOptionId: null,
+      correctOptionId: null,
+    };
+  }
+  const correctOptionId = SCORED_QUESTION_TYPES.has(question.questionType)
+    ? (correctOptionByQuestion.get(question.id) ?? null)
+    : null;
+  return {
+    questionId: question.id,
+    correct: selected === correctOptionId,
+    selectedOptionId: selected,
+    correctOptionId,
+  };
+}
+
+function recordAttempt(
+  db: Db,
+  attempt: { userId: number; quizId: number; score: number; passed: boolean },
+  questionResults: QuestionResult[]
+) {
+  return db.transaction((tx) => {
+    const inserted = tx.insert(quizAttempts).values(attempt).returning().get();
+    const answers = questionResults.flatMap((result) =>
+      result.selectedOptionId === null
+        ? []
+        : [
+            {
+              attemptId: inserted.id,
+              questionId: result.questionId,
+              selectedOptionId: result.selectedOptionId,
+            },
+          ]
+    );
+    if (answers.length > 0) tx.insert(quizAnswers).values(answers).run();
+    return inserted;
+  });
+}
+
 export function computeResult(
   db: Db,
   userId: number,
@@ -94,86 +155,36 @@ export function computeResult(
       return null;
     }
 
-    const questions = db
-      .select()
-      .from(quizQuestions)
-      .where(eq(quizQuestions.quizId, quizId))
-      .orderBy(quizQuestions.position)
-      .all();
+    const questions = getQuestions(db, quizId);
 
-    const correctOptionByQuestion = new Map<number, number>();
-    for (const option of getOptionsForQuestions(
+    const correctOptionByQuestion = getCorrectOptionByQuestion(
       db,
       questions.map((question) => question.id)
-    )) {
-      if (option.isCorrect && !correctOptionByQuestion.has(option.questionId)) {
-        correctOptionByQuestion.set(option.questionId, option.id);
-      }
-    }
+    );
+    const questionResults = questions.map((question) =>
+      scoreQuestion(
+        question,
+        selectedAnswers[question.id],
+        correctOptionByQuestion
+      )
+    );
 
-    let correct = 0;
+    const correct = questionResults.filter((result) => result.correct).length;
     const total = questions.length;
-    const questionResults: QuestionResult[] = [];
-
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
-      const selected = selectedAnswers[q.id];
-
-      if (!selected) {
-        questionResults.push({
-          questionId: q.id,
-          correct: false,
-          selectedOptionId: null,
-          correctOptionId: null,
-        });
-        continue;
-      }
-
-      const correctOptionId = SCORED_QUESTION_TYPES.has(q.questionType)
-        ? (correctOptionByQuestion.get(q.id) ?? null)
-        : null;
-
-      const isCorrect = selected === correctOptionId;
-      if (isCorrect) correct++;
-
-      questionResults.push({
-        questionId: q.id,
-        correct: isCorrect,
-        selectedOptionId: selected,
-        correctOptionId,
-      });
-    }
-
     const scoreValue = total > 0 ? correct / total : 0;
     const passed = scoreValue > 0.7;
-    const grade = calculateGrade(scoreValue);
 
-    const attempt = db.transaction((tx) => {
-      const inserted = tx
-        .insert(quizAttempts)
-        .values({ userId, quizId, score: scoreValue, passed })
-        .returning()
-        .get();
-      const answers = questionResults.flatMap((result) =>
-        result.selectedOptionId === null
-          ? []
-          : [
-              {
-                attemptId: inserted.id,
-                questionId: result.questionId,
-                selectedOptionId: result.selectedOptionId,
-              },
-            ]
-      );
-      if (answers.length > 0) tx.insert(quizAnswers).values(answers).run();
-      return inserted;
-    });
+    const attempt = recordAttempt(
+      db,
+      { userId, quizId, score: scoreValue, passed },
+      questionResults
+    );
 
     return {
       attemptId: attempt.id,
       score: scoreValue,
       passed,
-      grade,
+      grade: calculateGrade(scoreValue),
       totalCorrect: correct,
       totalQuestions: total,
       questionResults,

@@ -1,4 +1,4 @@
-import { eq, or } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   categories,
   comments,
@@ -8,6 +8,16 @@ import {
   users,
 } from "~/db/schema";
 import type { Db } from "./db";
+
+function getLessonsInModules(db: Db, moduleIds: number[]) {
+  if (moduleIds.length === 0) return [];
+  return db
+    .select()
+    .from(lessons)
+    .where(inArray(lessons.moduleId, moduleIds))
+    .orderBy(lessons.position)
+    .all();
+}
 
 export function getCourseWithDetails(db: Db, id: number) {
   const course = db
@@ -45,17 +55,10 @@ export function getCourseWithDetails(db: Db, id: number) {
     .orderBy(modules.position)
     .all();
 
-  const moduleIds = courseModules.map((m) => m.id);
-
-  const courseLessons =
-    moduleIds.length > 0
-      ? db
-          .select()
-          .from(lessons)
-          .where(or(...moduleIds.map((mid) => eq(lessons.moduleId, mid))))
-          .orderBy(lessons.position)
-          .all()
-      : [];
+  const courseLessons = getLessonsInModules(
+    db,
+    courseModules.map((m) => m.id)
+  );
 
   return {
     ...course,

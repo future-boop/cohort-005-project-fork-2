@@ -24,6 +24,37 @@ export type ThreadComment = {
   replies: ThreadComment[];
 };
 
+type ThreadRow = {
+  id: number;
+  body: Markdown;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  authorId: number;
+  authorName: string;
+  authorAvatarUrl: string | null;
+  authorRole: UserRole;
+};
+
+function toThreadComment(row: ThreadRow, instructorId: number): ThreadComment {
+  const deleted = row.deletedAt !== null;
+  return {
+    id: row.id,
+    body: deleted ? markdown("") : row.body,
+    createdAt: row.createdAt,
+    editedAt: deleted ? null : row.editedAt,
+    deleted,
+    author: {
+      id: row.authorId,
+      name: row.authorName,
+      avatarUrl: row.authorAvatarUrl,
+      isInstructor: row.authorId === instructorId,
+      isPlatformAdmin: row.authorRole === UserRole.Admin,
+    },
+    replies: [],
+  };
+}
+
 export function getLessonThread(db: Db, lessonId: number): ThreadComment[] {
   const course = getCourseForLesson(db, lessonId);
   if (!course) return [];
@@ -47,38 +78,21 @@ export function getLessonThread(db: Db, lessonId: number): ThreadComment[] {
     .orderBy(asc(comments.createdAt), asc(comments.id))
     .all();
 
-  const toThreadComment = (row: (typeof rows)[number]): ThreadComment => {
-    const deleted = row.deletedAt !== null;
-    return {
-      id: row.id,
-      body: deleted ? markdown("") : row.body,
-      createdAt: row.createdAt,
-      editedAt: deleted ? null : row.editedAt,
-      deleted,
-      author: {
-        id: row.authorId,
-        name: row.authorName,
-        avatarUrl: row.authorAvatarUrl,
-        isInstructor: row.authorId === course.instructorId,
-        isPlatformAdmin: row.authorRole === UserRole.Admin,
-      },
-      replies: [],
-    };
-  };
-
   const topLevel: ThreadComment[] = [];
   const byId = new Map<number, ThreadComment>();
 
   for (const row of rows) {
     if (row.parentId !== null) continue;
-    const comment = toThreadComment(row);
+    const comment = toThreadComment(row, course.instructorId);
     byId.set(comment.id, comment);
     topLevel.push(comment);
   }
 
   for (const row of rows) {
     if (row.parentId === null || row.deletedAt !== null) continue;
-    byId.get(row.parentId)?.replies.push(toThreadComment(row));
+    byId
+      .get(row.parentId)
+      ?.replies.push(toThreadComment(row, course.instructorId));
   }
 
   // A deleted question with no replies left has nothing worth showing.
